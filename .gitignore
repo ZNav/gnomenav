@@ -1,0 +1,31 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# compose / runtime backups (live on host, not source-controlled)
+*.bak
+*.bak.*
+docker-compose.override.yml
+
+# database dumps, certs, big binaries
+*.sql
+*.dump
+*.zip
+*.tar
+*.tar.gz
+*.zim
+*.pem
+*.crt
+*.key
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# python venvs (if any tooling lands here)
+venv/
+__pycache__/
+*.pyc

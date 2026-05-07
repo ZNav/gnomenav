@@ -1,0 +1,369 @@
+services:
+  # VPN and Related Services (Routed through the VPN)
+  vpn:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: vpn
+    privileged: true
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - VPN_PROV=mullvad
+      - VPN_TYPE=wireguard
+      - PEERDNS=false
+      - WG_PRIVKEY=${WG_PRIVKEY}
+      - WG_PUBKEY=${WG_PUBKEY}
+      - WG_ADDRESS=${WG_ADDRESS}
+      - WG_ENDPOINT=${WG_ENDPOINT}
+      - ALLOWED_IPS=0.0.0.0/0
+      - LAN_NETWORK=10.0.0.0/24,172.19.0.0/16,172.18.0.0/16
+    volumes:
+      - ./vpn/config:/config:Z
+    ports:
+      - 8081:8080 # qBittorrent Web UI
+      - 8989:8989 # Sonarr Web UI
+      - 7878:7878 # Radarr Web UI
+      - 9696:9696 # Prowlarr Web UI
+      - 8686:8686 # Lidarr Web UI
+      - 6881:6881 # qBittorrent (for incoming connections if needed)
+      - 6881:6881/udp # qBittorrent (for incoming connections if needed)
+    restart: unless-stopped
+    networks:
+      - torrent-vpn
+
+  cloudflared-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-tunnel
+    user: "1000:1000"
+    restart: unless-stopped
+    command: tunnel --config /etc/cloudflared/config.yml --protocol http2 --loglevel debug run
+    volumes:
+      - /home/x220-edge/.cloudflared:/etc/cloudflared
+    networks:
+      - nas_media-lan
+      - torrent-vpn
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    network_mode: "service:vpn"
+    volumes:
+      - ./qbittorrent/config:/config:Z
+      - ${DOWNLOADS_DIR}:/downloads:Z
+      - ${MOVIES_DIR}:/movies:z
+      - ${SHOWS_DIR}:/tv:z
+      - ${BOOKS_DIR}:/books:z
+      - ${MUSIC_DIR}:/music:z
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    depends_on:
+      - vpn
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    network_mode: "service:vpn"
+    volumes:
+      - ./sonarr/config:/config:Z
+      - ${SHOWS_DIR}:/tv:z
+      - ${DOWNLOADS_DIR}:/downloads:z
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    depends_on:
+      - vpn
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    network_mode: "service:vpn"
+    volumes:
+      - ./radarr/config:/config:Z
+      - ${MOVIES_DIR}:/movies:z
+      - ${DOWNLOADS_DIR}:/downloads:z
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    depends_on:
+      - vpn
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    restart: unless-stopped
+    network_mode: "service:vpn"
+    volumes:
+      - ./prowlarr/config:/config:Z
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    depends_on:
+      - vpn
+
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    restart: unless-stopped
+    network_mode: "service:vpn"
+    volumes:
+      - ./lidarr/config:/config:Z
+      - ${MUSIC_DIR}:/music:z
+      - ${DOWNLOADS_DIR}:/downloads:z
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    depends_on:
+      - vpn
+
+  # Media Services (accessible directly on LAN with reverse proxy)
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    ports:
+      - 8096:8096
+      - 8920:8920
+      - 1900:1900/udp
+      - 7359:7359/udp
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - ./jellyfin/config:/config:Z
+      - ./jellyfin/cache:/cache:Z
+      - ${MUSIC_DIR}:/data/music:ro,z
+      - ${MOVIES_DIR}:/data/movies:ro,z
+      - ${SHOWS_DIR}:/data/shows:ro,z
+      - ${PHOTOS_DIR}:/data/photos:ro,z
+      - ${BOOKS_DIR}:/data/books:ro,z
+      - ${OTHERS_DIR}:/data/others:ro,z
+      - ${PORN_DIR}:/data/porn:ro,z
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
+      - TZ=America/New_York
+    networks:
+      - nas_media-lan
+
+  nextcloud:
+    image: lscr.io/linuxserver/nextcloud:latest
+    container_name: nextcloud
+    restart: unless-stopped
+    ports:
+      - 8080:80
+    volumes:
+      - ./nextcloud/config:/config:Z
+      - ./nextcloud/data:/data:Z
+      - ${MUSIC_DIR}:/mnt/music:z
+      - ${PHOTOS_DIR}:/mnt/photos:z
+      - ${BOOKS_DIR}:/mnt/books:z
+      - /home/x220-edge/nas/files:/mnt/takeout-files:z
+      - /home/x220-edge/nas/media:/mnt/media:z
+      - /home/x220-edge/nas/downloads:/mnt/downloads:z
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_UPLOAD_LIMIT=512M
+    networks:
+      - nas_media-lan
+
+  gnomenav-backend:
+    build: ./gnomenav-backend
+    container_name: gnomenav-backend
+    restart: unless-stopped
+    ports:
+      - "8086:5000"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+    volumes:
+      - ./media:/data/media:rw,z # Mount the media directory for yt-dlp downloads
+      - ./gnomenav-backend/notes:/app/notes:rw,z # For persistent notes
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /mnt/x220:/mnt/x220:ro
+    networks:
+      - nas_media-lan
+
+  glance:
+    image: glanceapp/glance:latest
+    container_name: glance
+    restart: unless-stopped
+    ports:
+      - "8083:8080"
+    volumes:
+      - ./glance/config:/app/config
+    environment:
+      - TZ=America/New_York
+    networks:
+      - nas_media-lan
+
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    restart: unless-stopped
+    volumes:
+      - ./ollama:/root/.ollama
+    networks:
+      - nas_media-lan
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      - ./open-webui:/app/backend/data
+    networks:
+      - nas_media-lan
+    depends_on:
+      - ollama
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./portainer:/data
+    networks:
+      - nas_media-lan
+
+  ghost:
+    image: ghost:5-alpine
+    container_name: ghost
+    restart: unless-stopped
+    ports:
+      - "2368:2368"
+    volumes:
+      - ./ghost:/var/lib/ghost/content
+    environment:
+      - url=https://blog.gnomenav.com
+      - database__client=sqlite3
+      - database__connection__filename=/var/lib/ghost/content/data/ghost.db
+      - mail__transport=SMTP
+      - mail__options__host=smtp.gmail.com
+      - mail__options__port=465
+      - mail__options__secure=true
+      - mail__options__auth__user=zandernavratil@gmail.com
+      - mail__options__auth__pass=***REVOKED-2026-05-07***
+      - mail__from=z@gnomenav.com
+      - TZ=America/New_York
+    networks:
+      - nas_media-lan
+
+  adguardhome:
+    image: adguard/adguardhome:latest
+    container_name: adguardhome
+    restart: unless-stopped
+    ports:
+      # - "0.0.0.0:53:53/tcp" # disabled 2026-05-05: conflicts w/ systemd-resolved; re-enable on stable IP after DHCP reservation
+      # - "0.0.0.0:53:53/udp" # disabled 2026-05-05: conflicts w/ systemd-resolved
+      - "3000:3000/tcp"
+    volumes:
+      - ./adguardhome/work:/opt/adguardhome/work
+      - ./adguardhome/conf:/opt/adguardhome/conf
+    networks:
+      - nas_media-lan
+
+  gnomenav-site:
+    image: nginx:alpine
+    container_name: gnomenav-site
+    restart: unless-stopped
+    volumes:
+      - ./gnomenav-site:/usr/share/nginx/html:ro
+    networks:
+      - nas_media-lan
+
+  spotdl:
+    image: spotdl/spotify-downloader:latest
+    container_name: spotdl
+    restart: unless-stopped
+    command: >
+      web
+      --host 0.0.0.0
+      --port 5050
+      --client-id ${SPOTIFY_CLIENT_ID}
+      --client-secret ${SPOTIFY_CLIENT_SECRET}
+      --output "/music/{artist}/{album} ({year})/{track-number} - {title}.{output-ext}"
+      --format mp3
+      --bitrate 320k
+    ports:
+      - '5050:5050'
+    volumes:
+      - ${MUSIC_DIR}:/music
+    environment:
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+    networks:
+      - nas_media-lan
+
+  wikijs-db:
+    image: postgres:15-alpine
+    container_name: wikijs-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wiki
+      POSTGRES_USER: wiki
+      POSTGRES_PASSWORD: ${WIKIJS_DB_PASSWORD}
+    volumes:
+      - ./wikijs/db:/var/lib/postgresql/data
+    networks:
+      - nas_media-lan
+
+  wikijs:
+    image: ghcr.io/requarks/wiki:2
+    container_name: wikijs
+    restart: unless-stopped
+    depends_on:
+      - wikijs-db
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: wikijs-db
+      DB_PORT: 5432
+      DB_USER: wiki
+      DB_PASS: ${WIKIJS_DB_PASSWORD}
+      DB_NAME: wiki
+    ports:
+      - "3030:3000"
+    networks:
+      - nas_media-lan
+
+  kiwix:
+    image: ghcr.io/kiwix/kiwix-serve:latest
+    container_name: kiwix
+    restart: unless-stopped
+    profiles: ["wikipedia"]  # start with: docker compose --profile wikipedia up -d kiwix
+    command: ["--port=8080", "/data/wikipedia_en_all_maxi_2026-02.zim"]
+    volumes:
+      - /mnt/x220/kiwix:/data:ro
+    networks:
+      - nas_media-lan
+
+networks:
+  torrent-vpn:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: "fd00:dead:beef:2::/64"
+  nas_media-lan:
+    driver: bridge

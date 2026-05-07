@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+# nav — gnomenav homelab dispatcher
+# Usage: nav <command> [args]
+set -euo pipefail
+
+COMPOSE_DIR="${COMPOSE_DIR:-/home/znav/nas}"
+COMPOSE="docker compose"
+HOST="$(hostname)"
+GREEN=$'\033[1;32m'; DIM=$'\033[2m'; RED=$'\033[1;31m'; OFF=$'\033[0m'
+
+# ---- helpers ---------------------------------------------------------------
+
+_in_compose_dir() { cd "$COMPOSE_DIR"; }
+_need() { command -v "$1" >/dev/null || { echo "${RED}missing:${OFF} $1 — install with: $2"; return 1; }; }
+_banner() { printf "%s%s%s\n" "$GREEN" "── $1 ──" "$OFF"; }
+
+# ---- commands --------------------------------------------------------------
+
+cmd_status() {
+  _banner "host: $HOST"
+  uptime
+  echo
+  _banner "disk"
+  df -h / /home /mnt/x220 2>/dev/null | grep -v tmpfs || true
+  echo
+  _banner "memory"
+  free -h | head -2
+  echo
+  _banner "containers"
+  _in_compose_dir
+  $COMPOSE ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null \
+    || docker ps --format "table {{.Names}}\t{{.Status}}"
+}
+
+cmd_restart() {
+  _in_compose_dir
+  if [[ $# -eq 0 ]]; then
+    echo "${RED}error:${OFF} specify service(s) or 'all'"
+    echo "  nav restart all          # all services"
+    echo "  nav restart sonarr       # one service"
+    return 1
+  fi
+  if [[ "$1" == "all" ]]; then
+    $COMPOSE restart
+  else
+    $COMPOSE restart "$@"
+  fi
+}
+
+cmd_up()      { _in_compose_dir; $COMPOSE up -d "$@"; }
+cmd_down()    { _in_compose_dir; $COMPOSE down "$@"; }
+cmd_pull()    { _in_compose_dir; $COMPOSE pull "$@"; }
+
+cmd_logs() {
+  _in_compose_dir
+  if [[ $# -eq 0 ]]; then
+    echo "${RED}error:${OFF} specify a service"
+    return 1
+  fi
+  $COMPOSE logs --tail=200 -f "$@"
+}
+
+cmd_reboot() {
+  local target="${1:-$HOST}"
+  echo "${RED}rebooting${OFF} $target in 5s — Ctrl-C to cancel"
+  sleep 5
+  if [[ "$target" == "x220" ]]; then
+    ssh x220 'sudo systemctl reboot'
+  else
+    sudo systemctl reboot
+  fi
+}
+
+cmd_update() {
+  _banner "apt update + upgrade"
+  sudo apt update && sudo apt upgrade -y
+  _banner "docker pull (compose images)"
+  _in_compose_dir
+  $COMPOSE pull
+  _banner "docker compose up -d (apply pulled images)"
+  $COMPOSE up -d
+  _banner "prune dangling images"
+  docker image prune -f
+}
+
+cmd_files() {
+  if command -v yazi >/dev/null; then exec yazi "${1:-$HOME}"
+  elif command -v ranger >/dev/null; then exec ranger "${1:-$HOME}"
+  elif command -v nnn >/dev/null; then exec nnn "${1:-$HOME}"
+  else
+    echo "${DIM}install one of:${OFF} yazi (recommended), ranger, nnn"
+    echo "  sudo apt install yazi  ||  cargo install --locked yazi-fm"
+  fi
+}
+
+cmd_read() {
+  _need epy "pip install epy-reader" || return 1
+  local books_dir="/mnt/x220/files/books"
+  if [[ -n "${1:-}" && -f "$1" ]]; then exec epy "$1"
+  elif [[ -d "$books_dir" ]]; then exec epy "$books_dir"
+  else
+    echo "no book given and $books_dir not found"
+    return 1
+  fi
+}
+
+cmd_music() {
+  if command -v stmp >/dev/null; then exec stmp
+  elif command -v sublime-music >/dev/null; then exec sublime-music
+  else
+    echo "${DIM}install one of:${OFF}"
+    echo "  go install github.com/wildeyedskies/stmp@latest   # subsonic terminal music player"
+    echo "  pipx install sublime-music                         # textual TUI"
+    echo "configure for: https://music.gnomenav.com"
+  fi
+}
+
+cmd_mail() {
+  _need aerc "sudo apt install aerc" || return 1
+  exec aerc
+}
+
+cmd_wiki() {
+  local query="${*:-}"
+  if [[ -z "$query" ]]; then
+    echo "usage: nav wiki <search terms>"
+    return 1
+  fi
+  command -v glow >/dev/null || { echo "install: sudo apt install glow"; return 1; }
+  curl -s "https://wiki.gnomenav.com/search?q=$(printf '%s' "$query" | jq -sRr @uri)" \
+    | glow -p -
+}
+
+cmd_dash() {
+  if command -v lazydocker >/dev/null; then exec lazydocker
+  else
+    echo "${DIM}install lazydocker:${OFF}"
+    echo "  curl https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | bash"
+    echo
+    cmd_status
+  fi
+}
+
+cmd_ssh() {
+  local target="${1:-}"
+  case "$target" in
+    msi|x220) ssh "$target" ;;
+    "") echo "usage: nav ssh msi|x220" ;;
+    *) ssh "$@" ;;
+  esac
+}
+
+cmd_health() {
+  _banner "cloudflared"
+  systemctl is-active cloudflared 2>/dev/null || echo "not a systemd unit (likely container)"
+  docker ps --format '{{.Names}}\t{{.Status}}' | grep -i cloudflared || echo "no cloudflared container"
+  echo
+  _banner "public endpoints"
+  for url in https://gnomenav.com https://wiki.gnomenav.com https://jellyfin.gnomenav.com; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" || echo "ERR")
+    printf "%s  %s\n" "$code" "$url"
+  done
+}
+
+# ---- dispatch --------------------------------------------------------------
+
+usage() {
+  cat <<EOF
+nav — gnomenav homelab dispatcher
+
+  nav status              service+system overview
+  nav up [svc]            docker compose up -d
+  nav down [svc]          docker compose down
+  nav restart all|<svc>   restart container(s)
+  nav logs <svc> [-f]     tail container logs
+  nav pull [svc]          pull updated images
+  nav update              apt upgrade + docker pull + recreate
+  nav health              cloudflared + public endpoint probe
+  nav reboot [msi|x220]   full reboot (5s grace)
+
+  nav files [path]        yazi / ranger / nnn
+  nav read [book]         epy reader on /mnt/x220/files/books
+  nav music               navidrome via stmp / sublime-music
+  nav mail                aerc IMAP client
+  nav wiki <query>        search wiki.gnomenav.com
+  nav dash                lazydocker (or fallback status)
+  nav ssh msi|x220        ssh shortcut
+
+env: COMPOSE_DIR=$COMPOSE_DIR
+EOF
+}
+
+cmd="${1:-}"
+[[ -z "$cmd" ]] && { usage; exit 0; }
+shift
+case "$cmd" in
+  status|st)        cmd_status   "$@" ;;
+  up)               cmd_up       "$@" ;;
+  down)             cmd_down     "$@" ;;
+  restart|rs)       cmd_restart  "$@" ;;
+  logs|log)         cmd_logs     "$@" ;;
+  pull)             cmd_pull     "$@" ;;
+  update|upgrade)   cmd_update   "$@" ;;
+  health)           cmd_health   "$@" ;;
+  reboot)           cmd_reboot   "$@" ;;
+  files|f)          cmd_files    "$@" ;;
+  read|book)        cmd_read     "$@" ;;
+  music|m)          cmd_music    "$@" ;;
+  mail)             cmd_mail     "$@" ;;
+  wiki|w)           cmd_wiki     "$@" ;;
+  dash|d)           cmd_dash     "$@" ;;
+  ssh)              cmd_ssh      "$@" ;;
+  -h|--help|help)   usage ;;
+  *) echo "unknown: $cmd"; usage; exit 1 ;;
+esac
