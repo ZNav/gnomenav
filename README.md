@@ -12,6 +12,12 @@ tunnels, with a single CLI dispatcher (`nav`) for ops from anywhere.
 > Built on the principle that infrastructure should answer to the operator,
 > not the other way around. Every byte stays on hardware I own.
 
+## Latest writing
+
+- **2026-05-07** — [What broke when I came back: 4 failure modes from a homelab cold boot](writeups/2026-05-07-cold-boot-recovery.md)
+
+See [`WRITEUPS.md`](WRITEUPS.md) for the full index.
+
 ## Topology
 
 ```
