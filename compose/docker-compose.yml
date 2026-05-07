@@ -352,7 +352,7 @@ services:
     container_name: kiwix
     restart: unless-stopped
     profiles: ["wikipedia"]  # start with: docker compose --profile wikipedia up -d kiwix
-    command: ["--port=8080", "/data/wikipedia_en_all_maxi_2026-02.zim"]
+    command: ["/data/wikipedia_en_all_maxi_2026-02.zim"]
     volumes:
       - /mnt/x220/kiwix:/data:ro
     networks:
