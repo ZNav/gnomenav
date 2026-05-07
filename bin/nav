@@ -1,20 +1,28 @@
 #!/usr/bin/env bash
 # nav — gnomenav homelab dispatcher
-# Usage: nav <command> [args]
+# `nav` (no args) launches the TUI command center.
 set -euo pipefail
 
 COMPOSE_DIR="${COMPOSE_DIR:-/home/znav/nas}"
 COMPOSE="docker compose"
 HOST="$(hostname)"
-GREEN=$'\033[1;32m'; DIM=$'\033[2m'; RED=$'\033[1;31m'; OFF=$'\033[0m'
+WIKI_URL="${WIKI_URL:-https://wiki.gnomenav.com}"
+KIWIX_URL="${KIWIX_URL:-https://kiwix.gnomenav.com}"
+KIWIX_BOOK="${KIWIX_BOOK:-wikipedia_en_all_maxi_2026-02}"
+JELLYFIN_URL="${JELLYFIN_URL:-https://jellyfin.gnomenav.com}"
+OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-dolphin3}"
+
+GREEN=$'\033[1;32m'; DIM=$'\033[2m'; RED=$'\033[1;31m'; BOLD=$'\033[1m'; OFF=$'\033[0m'
 
 # ---- helpers ---------------------------------------------------------------
 
-_in_compose_dir() { cd "$COMPOSE_DIR"; }
-_need() { command -v "$1" >/dev/null || { echo "${RED}missing:${OFF} $1 — install with: $2"; return 1; }; }
+_in_compose_dir() { cd "$COMPOSE_DIR" 2>/dev/null || return 1; }
+_need() { command -v "$1" >/dev/null || { echo "${RED}missing:${OFF} $1 — $2"; return 1; }; }
 _banner() { printf "%s%s%s\n" "$GREEN" "── $1 ──" "$OFF"; }
+_pause() { read -rp "${DIM}[enter to continue]${OFF} " _ || true; }
 
-# ---- commands --------------------------------------------------------------
+# ---- system / docker -------------------------------------------------------
 
 cmd_status() {
   _banner "host: $HOST"
@@ -27,37 +35,47 @@ cmd_status() {
   free -h | head -2
   echo
   _banner "containers"
-  _in_compose_dir
-  $COMPOSE ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null \
-    || docker ps --format "table {{.Names}}\t{{.Status}}"
+  if _in_compose_dir; then
+    $COMPOSE ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null \
+      || docker ps --format "table {{.Names}}\t{{.Status}}"
+  else
+    docker ps --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || echo "no docker on this host"
+  fi
 }
 
 cmd_restart() {
-  _in_compose_dir
+  _in_compose_dir || { echo "no compose dir"; return 1; }
   if [[ $# -eq 0 ]]; then
-    echo "${RED}error:${OFF} specify service(s) or 'all'"
-    echo "  nav restart all          # all services"
-    echo "  nav restart sonarr       # one service"
-    return 1
-  fi
-  if [[ "$1" == "all" ]]; then
+    if command -v gum >/dev/null; then
+      svc=$($COMPOSE ps --services | gum choose --header "restart which service?")
+      [[ -n "$svc" ]] && $COMPOSE restart "$svc"
+    else
+      echo "${RED}error:${OFF} specify service(s) or 'all'"
+      return 1
+    fi
+  elif [[ "$1" == "all" ]]; then
     $COMPOSE restart
   else
     $COMPOSE restart "$@"
   fi
 }
 
-cmd_up()      { _in_compose_dir; $COMPOSE up -d "$@"; }
-cmd_down()    { _in_compose_dir; $COMPOSE down "$@"; }
-cmd_pull()    { _in_compose_dir; $COMPOSE pull "$@"; }
+cmd_up()      { _in_compose_dir && $COMPOSE up -d "$@"; }
+cmd_down()    { _in_compose_dir && $COMPOSE down "$@"; }
+cmd_pull()    { _in_compose_dir && $COMPOSE pull "$@"; }
 
 cmd_logs() {
-  _in_compose_dir
-  if [[ $# -eq 0 ]]; then
+  _in_compose_dir || return 1
+  if [[ $# -eq 0 ]] && command -v gum >/dev/null; then
+    svc=$($COMPOSE ps --services | gum choose --header "logs of which service?")
+    [[ -z "$svc" ]] && return 0
+    $COMPOSE logs --tail=200 -f "$svc"
+  elif [[ $# -eq 0 ]]; then
     echo "${RED}error:${OFF} specify a service"
     return 1
+  else
+    $COMPOSE logs --tail=200 -f "$@"
   fi
-  $COMPOSE logs --tail=200 -f "$@"
 }
 
 cmd_reboot() {
@@ -65,78 +83,129 @@ cmd_reboot() {
   echo "${RED}rebooting${OFF} $target in 5s — Ctrl-C to cancel"
   sleep 5
   if [[ "$target" == "x220" ]]; then
-    ssh x220 'sudo systemctl reboot'
+    ssh x220 'sudo systemctl reboot' || ssh x220-jump 'sudo systemctl reboot'
   else
     sudo systemctl reboot
   fi
 }
 
 cmd_update() {
-  _banner "apt update + upgrade"
-  sudo apt update && sudo apt upgrade -y
-  _banner "docker pull (compose images)"
-  _in_compose_dir
-  $COMPOSE pull
-  _banner "docker compose up -d (apply pulled images)"
-  $COMPOSE up -d
-  _banner "prune dangling images"
-  docker image prune -f
+  _banner "system update"
+  if command -v pacman >/dev/null; then
+    sudo pacman -Syu --noconfirm
+  elif command -v apt >/dev/null; then
+    sudo apt update && sudo apt upgrade -y && sudo apt autoremove --purge -y
+  fi
+  if _in_compose_dir; then
+    _banner "docker pull (compose images)"
+    $COMPOSE pull
+    _banner "recreate with new images"
+    $COMPOSE up -d
+    _banner "prune dangling images"
+    docker image prune -f
+  fi
 }
+
+cmd_health() {
+  _banner "cloudflared"
+  systemctl is-active cloudflared 2>/dev/null || echo "${DIM}not a systemd unit (likely container)${OFF}"
+  docker ps --format '{{.Names}}\t{{.Status}}' | grep -i cloudflared || echo "no cloudflared container"
+  echo
+  _banner "public endpoints"
+  for url in https://gnomenav.com https://wiki.gnomenav.com https://kiwix.gnomenav.com \
+             https://jellyfin.gnomenav.com https://nextcloud.gnomenav.com \
+             https://music.gnomenav.com https://books.gnomenav.com \
+             https://mail.gnomenav.com https://memories.gnomenav.com; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" || echo "ERR")
+    color=$DIM
+    [[ "$code" =~ ^2 ]] && color=$GREEN
+    [[ "$code" =~ ^3 ]] && color=$DIM
+    [[ "$code" =~ ^[45] || "$code" == "ERR" ]] && color=$RED
+    printf "%s%s%s  %s\n" "$color" "$code" "$OFF" "$url"
+  done
+}
+
+# ---- content / services ----------------------------------------------------
 
 cmd_files() {
   if command -v yazi >/dev/null; then exec yazi "${1:-$HOME}"
   elif command -v ranger >/dev/null; then exec ranger "${1:-$HOME}"
   elif command -v nnn >/dev/null; then exec nnn "${1:-$HOME}"
-  else
-    echo "${DIM}install one of:${OFF} yazi (recommended), ranger, nnn"
-    echo "  sudo apt install yazi  ||  cargo install --locked yazi-fm"
-  fi
+  else echo "install: yazi (rec) | ranger | nnn"; fi
 }
 
 cmd_read() {
-  _need epy "pip install epy-reader" || return 1
-  local books_dir="/mnt/x220/files/books"
+  _need epy "pipx install epy-reader (or pip install --user)" || return 1
+  local books_dir="${BOOKS_DIR:-/mnt/x220/files/books}"
   if [[ -n "${1:-}" && -f "$1" ]]; then exec epy "$1"
   elif [[ -d "$books_dir" ]]; then exec epy "$books_dir"
-  else
-    echo "no book given and $books_dir not found"
-    return 1
-  fi
+  else echo "no book given and $books_dir not found"; fi
 }
 
 cmd_music() {
-  if command -v stmp >/dev/null; then exec stmp
-  elif command -v sublime-music >/dev/null; then exec sublime-music
-  else
-    echo "${DIM}install one of:${OFF}"
-    echo "  go install github.com/wildeyedskies/stmp@latest   # subsonic terminal music player"
-    echo "  pipx install sublime-music                         # textual TUI"
-    echo "configure for: https://music.gnomenav.com"
-  fi
+  _need stmp "yay -S stmp / go install github.com/wildeyedskies/stmp@latest" || return 1
+  exec stmp "$@"
 }
 
 cmd_mail() {
-  _need aerc "sudo apt install aerc" || return 1
-  exec aerc
+  _need aerc "pacman -S aerc / apt install aerc" || return 1
+  exec aerc "$@"
 }
 
 cmd_wiki() {
-  local query="${*:-}"
-  if [[ -z "$query" ]]; then
-    echo "usage: nav wiki <search terms>"
-    return 1
+  _need w3m "pacman -S w3m / apt install w3m" || return 1
+  if [[ -z "${1:-}" ]]; then
+    exec w3m "$WIKI_URL"
+  else
+    local q; q=$(printf '%s' "$*" | jq -sRr @uri 2>/dev/null || echo "$*")
+    exec w3m "$WIKI_URL/search?q=$q"
   fi
-  command -v glow >/dev/null || { echo "install: sudo apt install glow"; return 1; }
-  curl -s "https://wiki.gnomenav.com/search?q=$(printf '%s' "$query" | jq -sRr @uri)" \
-    | glow -p -
+}
+
+cmd_kiwix() {
+  _need w3m "pacman -S w3m / apt install w3m" || return 1
+  if [[ -z "${1:-}" ]]; then
+    exec w3m "$KIWIX_URL"
+  else
+    local q; q=$(printf '%s' "$*" | jq -sRr @uri 2>/dev/null || echo "$*")
+    exec w3m "$KIWIX_URL/search?pattern=$q&books.name=$KIWIX_BOOK"
+  fi
+}
+
+cmd_watch() {
+  if command -v jellycli >/dev/null; then exec jellycli
+  elif command -v jftui >/dev/null; then exec jftui
+  else
+    echo "${DIM}no jellyfin CLI installed.${OFF}"
+    echo "options:"
+    echo "  - jellycli (Go):  go install github.com/tryffel/jellycli@latest"
+    echo "  - or open in browser:  $JELLYFIN_URL"
+    echo
+    if command -v mpv >/dev/null && [[ -n "${1:-}" ]]; then
+      echo "fallback: mpv stream URL:"
+      read -rp "paste a Jellyfin direct stream URL (or empty to skip): " url
+      [[ -n "$url" ]] && exec mpv "$url"
+    fi
+  fi
+}
+
+cmd_ollama() {
+  _need curl "your distro's curl pkg" || return 1
+  echo "${GREEN}─ chat with $OLLAMA_MODEL — Ctrl-D to quit ─${OFF}"
+  while IFS= read -rp "${BOLD}you> ${OFF}" prompt; do
+    [[ -z "$prompt" ]] && continue
+    printf "${GREEN}llm>${OFF} "
+    curl -s "$OLLAMA_URL/api/generate" \
+      -d "{\"model\":\"$OLLAMA_MODEL\",\"prompt\":$(printf '%s' "$prompt" | jq -Rs .),\"stream\":true}" \
+      | jq -j '.response // empty' 2>/dev/null
+    echo
+  done
 }
 
 cmd_dash() {
   if command -v lazydocker >/dev/null; then exec lazydocker
   else
-    echo "${DIM}install lazydocker:${OFF}"
-    echo "  curl https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | bash"
-    echo
+    echo "install lazydocker: curl https://raw.githubusercontent.com/jesseduffield/lazydocker/master/scripts/install_update_linux.sh | bash"
     cmd_status
   fi
 }
@@ -144,56 +213,132 @@ cmd_dash() {
 cmd_ssh() {
   local target="${1:-}"
   case "$target" in
-    msi|x220) ssh "$target" ;;
-    "") echo "usage: nav ssh msi|x220" ;;
+    msi|x220|x220-jump) ssh "$target" ;;
+    "") echo "usage: nav ssh msi|x220|x220-jump" ;;
     *) ssh "$@" ;;
   esac
 }
 
-cmd_health() {
-  _banner "cloudflared"
-  systemctl is-active cloudflared 2>/dev/null || echo "not a systemd unit (likely container)"
-  docker ps --format '{{.Names}}\t{{.Status}}' | grep -i cloudflared || echo "no cloudflared container"
-  echo
-  _banner "public endpoints"
-  for url in https://gnomenav.com https://wiki.gnomenav.com https://jellyfin.gnomenav.com; do
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$url" || echo "ERR")
-    printf "%s  %s\n" "$code" "$url"
+# ---- TUI menu --------------------------------------------------------------
+
+cmd_menu() {
+  _need gum "pacman -S gum / brew install gum / apt install gum" || return 1
+
+  local logo="
+   ██████╗ ███╗   ██╗ ██████╗ ███╗   ███╗███████╗███╗   ██╗ █████╗ ██╗   ██╗
+  ██╔════╝ ████╗  ██║██╔═══██╗████╗ ████║██╔════╝████╗  ██║██╔══██╗██║   ██║
+  ██║  ███╗██╔██╗ ██║██║   ██║██╔████╔██║█████╗  ██╔██╗ ██║███████║██║   ██║
+  ██║   ██║██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══╝  ██║╚██╗██║██╔══██║╚██╗ ██╔╝
+  ╚██████╔╝██║ ╚████║╚██████╔╝██║ ╚═╝ ██║███████╗██║ ╚████║██║  ██║ ╚████╔╝
+   ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝  ╚═══╝
+                          C O M M A N D   C E N T E R
+"
+
+  while true; do
+    clear
+    printf "%s%s%s\n" "$GREEN" "$logo" "$OFF"
+    printf "%shost: %s   compose: %s%s\n\n" "$DIM" "$HOST" "$COMPOSE_DIR" "$OFF"
+
+    choice=$(gum choose --height 20 \
+      --cursor.foreground 42 --selected.foreground 42 \
+      --header "what do you want to do?" \
+      "status         — system + service overview" \
+      "health         — public endpoint probe" \
+      "dash           — lazydocker (container TUI)" \
+      "logs           — tail logs (pick service)" \
+      "restart        — restart a service" \
+      "update         — system + docker pull + recreate" \
+      "files          — yazi file browser" \
+      "read           — epy ebook reader" \
+      "music          — navidrome (stmp)" \
+      "watch          — jellyfin CLI" \
+      "wiki           — search wiki.gnomenav.com" \
+      "kiwix          — offline Wikipedia search" \
+      "mail           — aerc IMAP client" \
+      "ollama         — chat with local LLM" \
+      "ssh msi        — interactive shell on msi" \
+      "ssh x220       — interactive shell on x220 (LAN)" \
+      "ssh x220-jump  — x220 via msi tunnel (anywhere)" \
+      "reboot msi     — reboot msi (5s grace)" \
+      "reboot x220    — reboot x220 (5s grace)" \
+      "shell          — drop to a shell on this host" \
+      "quit") || break
+
+    [[ -z "$choice" ]] && break
+    cmd_word="${choice%% *}"
+    [[ "$cmd_word" == "quit" ]] && break
+
+    case "$cmd_word" in
+      ssh)
+        target=$(echo "$choice" | awk '{print $2}')
+        ssh "$target"
+        ;;
+      reboot)
+        target=$(echo "$choice" | awk '{print $2}')
+        cmd_reboot "$target"
+        ;;
+      shell)
+        "${SHELL:-bash}"
+        ;;
+      *)
+        if declare -f "cmd_$cmd_word" >/dev/null; then
+          "cmd_$cmd_word"
+          [[ "$cmd_word" =~ ^(status|health|logs)$ ]] && _pause
+        else
+          echo "${RED}unknown:${OFF} $cmd_word"
+          _pause
+        fi
+        ;;
+    esac
   done
+  clear
+  echo "${GREEN}stay sovereign.${OFF}"
 }
 
-# ---- dispatch --------------------------------------------------------------
+# ---- usage -----------------------------------------------------------------
 
 usage() {
   cat <<EOF
 nav — gnomenav homelab dispatcher
 
+  ${BOLD}nav${OFF}                     launch TUI command center
   nav status              service+system overview
+  nav health              public endpoint probe
+  nav dash                lazydocker
+  nav logs <svc> [-f]     tail container logs
+  nav restart all|<svc>   restart container(s)
   nav up [svc]            docker compose up -d
   nav down [svc]          docker compose down
-  nav restart all|<svc>   restart container(s)
-  nav logs <svc> [-f]     tail container logs
   nav pull [svc]          pull updated images
-  nav update              apt upgrade + docker pull + recreate
-  nav health              cloudflared + public endpoint probe
-  nav reboot [msi|x220]   full reboot (5s grace)
+  nav update              pacman/apt + docker pull + recreate
+  nav reboot [msi|x220]   full reboot
 
   nav files [path]        yazi / ranger / nnn
-  nav read [book]         epy reader on /mnt/x220/files/books
-  nav music               navidrome via stmp / sublime-music
-  nav mail                aerc IMAP client
-  nav wiki <query>        search wiki.gnomenav.com
-  nav dash                lazydocker (or fallback status)
-  nav ssh msi|x220        ssh shortcut
+  nav read [book]         epy reader
+  nav music               stmp (navidrome subsonic)
+  nav watch               jellyfin CLI
+  nav wiki [query]        search wiki.gnomenav.com (w3m)
+  nav kiwix [query]       search offline Wikipedia (w3m)
+  nav mail                aerc IMAP
+  nav ollama              chat with local LLM
+  nav ssh msi|x220|x220-jump
 
-env: COMPOSE_DIR=$COMPOSE_DIR
+env:
+  COMPOSE_DIR=$COMPOSE_DIR
+  WIKI_URL=$WIKI_URL
+  KIWIX_URL=$KIWIX_URL
+  OLLAMA_URL=$OLLAMA_URL  OLLAMA_MODEL=$OLLAMA_MODEL
 EOF
 }
 
-cmd="${1:-}"
-[[ -z "$cmd" ]] && { usage; exit 0; }
-shift
+# ---- dispatch --------------------------------------------------------------
+
+cmd="${1:-menu}"
+[[ "$cmd" == "--help" || "$cmd" == "-h" || "$cmd" == "help" ]] && { usage; exit 0; }
+shift 2>/dev/null || true
+
 case "$cmd" in
+  menu|"")          cmd_menu     "$@" ;;
   status|st)        cmd_status   "$@" ;;
   up)               cmd_up       "$@" ;;
   down)             cmd_down     "$@" ;;
@@ -206,10 +351,12 @@ case "$cmd" in
   files|f)          cmd_files    "$@" ;;
   read|book)        cmd_read     "$@" ;;
   music|m)          cmd_music    "$@" ;;
-  mail)             cmd_mail     "$@" ;;
+  watch|v)          cmd_watch    "$@" ;;
   wiki|w)           cmd_wiki     "$@" ;;
+  kiwix|k)          cmd_kiwix    "$@" ;;
+  mail)             cmd_mail     "$@" ;;
+  ollama|llm)       cmd_ollama   "$@" ;;
   dash|d)           cmd_dash     "$@" ;;
   ssh)              cmd_ssh      "$@" ;;
-  -h|--help|help)   usage ;;
   *) echo "unknown: $cmd"; usage; exit 1 ;;
 esac
