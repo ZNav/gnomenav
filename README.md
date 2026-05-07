@@ -1,7 +1,12 @@
-# homelab-infra
+# gnomenav
 
-Self-hosted homelab orchestration for [`gnomenav.com`](https://gnomenav.com).
-20+ services on docker-compose across two hosts, gated by Cloudflare Zero Trust
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Services](https://img.shields.io/badge/services-30%2B-blue)
+![Edge](https://img.shields.io/badge/edge-Cloudflare%20Zero%20Trust-orange)
+![Status](https://img.shields.io/website?url=https%3A%2F%2Fgnomenav.com&label=gnomenav.com)
+
+Self-hosted homelab orchestration powering [`gnomenav.com`](https://gnomenav.com).
+30+ services on docker-compose across two hosts, gated by Cloudflare Zero Trust
 tunnels, with a single CLI dispatcher (`nav`) for ops from anywhere.
 
 > Built on the principle that infrastructure should answer to the operator,
