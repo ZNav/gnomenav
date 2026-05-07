@@ -145,7 +145,7 @@ services:
       - ${PHOTOS_DIR}:/data/photos:ro,z
       - ${BOOKS_DIR}:/data/books:ro,z
       - ${OTHERS_DIR}:/data/others:ro,z
-      - ${PORN_DIR}:/data/porn:ro,z
+      - ${MEDIA_VAULT_DIR}:/data/private:ro,z
     environment:
       - PUID=1000
       - PGID=1000
@@ -263,9 +263,9 @@ services:
       - mail__options__host=smtp.gmail.com
       - mail__options__port=465
       - mail__options__secure=true
-      - mail__options__auth__user=zandernavratil@gmail.com
-      - mail__options__auth__pass=***REVOKED-2026-05-07***
-      - mail__from=z@gnomenav.com
+      - mail__options__auth__user=${GHOST_SMTP_USER}
+      - mail__options__auth__pass=${GHOST_SMTP_PASS}
+      - mail__from=${GHOST_MAIL_FROM}
       - TZ=America/New_York
     networks:
       - nas_media-lan

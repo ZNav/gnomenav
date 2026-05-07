@@ -86,16 +86,14 @@ way as `~/.ssh/config` above; Termius handles the SSO callback in-app.
 
 ## Access policy
 
-5 allowed emails on the `nav-ssh` Access app:
-- zandernavratil@gmail.com
-- zander@cooksbook.com
-- gnomenav@proton.me
-- z@gnomenav.com
-- kehoetaija@gmail.com
+The `nav-ssh` Access app is configured with a small allowlist of personal
+email addresses across Gmail / Proton / `@gnomenav.com`. Cloudflare sends a
+one-time PIN to whichever email is entered at the SSO prompt; only listed
+addresses are accepted.
 
-Note: the `@gnomenav.com` mailboxes inbound-route via Cloudflare Email Routing
-to Gmail, so OTPs land in Gmail anyway. Effective security floor = Gmail
-account security.
+Note: `@gnomenav.com` mailboxes route inbound via Cloudflare Email Routing,
+so OTPs eventually land in a Gmail-equivalent inbox regardless. Effective
+security floor = the underlying mailbox provider's account security.
 
 ## Short-lived cert mode (optional, not currently configured)
 

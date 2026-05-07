@@ -45,7 +45,7 @@ drift.
 
 | App domain | Policy | Reason |
 |---|---|---|
-| ssh.gnomenav.com | Allow if email in {zandernavratil@gmail.com, zander@cooksbook.com, gnomenav@proton.me, z@gnomenav.com, kehoetaija@gmail.com} | SSH must SSO; bare SSH endpoint to internet is unacceptable |
+| ssh.gnomenav.com | Allow if email in operator allowlist (small list of personal Gmail / Proton / `@gnomenav.com` addresses) | SSH must SSO; bare SSH endpoint to internet is unacceptable |
 
 Anything not listed here is _publicly_ reachable (anyone on the internet can
 hit it). That's intentional for public sites (gnomenav.com, blog) but should
