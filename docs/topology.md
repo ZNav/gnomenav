@@ -74,6 +74,5 @@ cockpit, netdata).
 
 ## Pending
 
-See [Homelab TODO](https://github.com/ZNav/homelab-infra/issues) (or your local
-TODO memory) for outstanding work — DHCP reservation, router DNS to AdGuard,
-backup mail relay VPS, etc.
+See [Issues](https://github.com/ZNav/gnomenav/issues) for outstanding work —
+DHCP reservation, router DNS to AdGuard, backup mail relay VPS, etc.
