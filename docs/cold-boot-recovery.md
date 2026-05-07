@@ -65,11 +65,12 @@ Done via Cloudflare Zero Trust dashboard → Tunnels → Public Hostnames.
 `docker compose up -d --remove-orphans` would silently delete services that
 never made it into the compose file.
 
-**Background**: As of 2026-05-05, ~9 containers run with `project=nas` label
+**Background**: As of 2026-05-07, 8 containers run with `project=nas` label
 but their service definitions are missing from `compose/docker-compose.yml`:
-roundcube, mailserver, cockpit-proxy, mindset-backend, wanderer, wanderer-db,
-wanderer-meili, navidrome, kavita. They survive because of `restart:
-unless-stopped` even after host reboot, but they're not in source.
+roundcube, mailserver, cockpit-proxy, wanderer, wanderer-db, wanderer-meili,
+navidrome, kavita. They survive because of `restart: unless-stopped` even
+after host reboot, but they're not in source. (mindset-backend was the 9th —
+killed 2026-05-07.)
 
 **DO NOT run `docker compose up -d --remove-orphans` until either**:
 - (a) those services are added back to `docker-compose.yml`, OR

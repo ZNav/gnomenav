@@ -36,7 +36,6 @@ drift.
 | portainer.gnomenav.com | HTTP | `http://portainer:9000` | |
 | wiki.gnomenav.com | HTTP | `http://wikijs:3000` | |
 | kiwix.gnomenav.com | HTTP | `http://kiwix:8080` | parked under compose profile until ZIM ready |
-| mindset.gnomenav.com | HTTP | `http://mindset-backend:5000` | |
 | netdata.gnomenav.com | HTTP | `http://172.19.0.1:19999` | host service via bridge gw |
 | cockpit-msi.gnomenav.com | HTTPS | `https://172.19.0.1:9090` | TLS verify off |
 | cockpit-x220.gnomenav.com | HTTPS | `https://10.0.0.138:9090` | direct, TLS verify off |
