@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="gnomenav — a self-hosted homelab. 30+ services on hardware I own, fronted by Cloudflare Zero Trust.">
+<title>gnomenav — self-hosted everything</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <svg class="gnome-mark" viewBox="0 0 96 96" role="img" aria-label="line-drawn gnome">
+    <g fill="none" stroke="#33ff33" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <!-- hat -->
+      <path d="M48 8 L31 42 L65 42 Z"/>
+      <path d="M27 42 L69 42"/>
+      <!-- eyes -->
+      <circle cx="41" cy="50" r="1.8" fill="#33ff33" stroke="none"/>
+      <circle cx="55" cy="50" r="1.8" fill="#33ff33" stroke="none"/>
+      <!-- nose -->
+      <circle cx="48" cy="56" r="3.5"/>
+      <!-- beard -->
+      <path d="M33 46 Q 29 74 48 86 Q 67 74 63 46"/>
+      <!-- mustache -->
+      <path d="M40 62 Q 48 68 56 62" stroke-width="1.5" opacity="0.6"/>
+    </g>
+    <circle cx="48" cy="8" r="2.2" fill="#ffb000"/>
+  </svg>
+  <h1 class="wordmark">gnome<span class="nav">nav</span></h1>
+  <p class="tagline"><span id="typed">every byte on hardware i own</span><span class="cursor">&nbsp;</span></p>
+
+  <div class="term" aria-label="nav status output">
+    <div class="term-bar">znav@msi — nav status</div>
+    <div class="term-body"><pre><span class="prompt">$</span> nav status
+hosts      msi <span class="muted">(compute, ryzen)</span> ⇄ x220 <span class="muted">(nas, thinkpad)</span>   <span class="ok">[up]</span>
+edge       cloudflare zero trust tunnel                <span class="ok">[up]</span>
+services   30+ containers <span class="muted">— media, files, ai, dns, wiki</span>
+next       full declarative rebuild on nixos           <span class="muted">[soon]</span></pre></div>
+  </div>
+</header>
+
+<main>
+<section aria-labelledby="services">
+  <h2 id="services">services</h2>
+
+  <p class="svc-group-label">stream</p>
+  <div class="grid">
+    <a class="card" href="https://jellyfin.gnomenav.com">
+      <span class="svc-name">jellyfin</span>
+      <span class="svc-host">jellyfin.gnomenav.com</span>
+      <span class="svc-desc">movies &amp; shows, hardware-transcoded</span>
+    </a>
+    <a class="card" href="https://music.gnomenav.com">
+      <span class="svc-name">navidrome</span>
+      <span class="svc-host">music.gnomenav.com</span>
+      <span class="svc-desc">the music collection, subsonic-compatible</span>
+    </a>
+    <a class="card" href="https://books.gnomenav.com">
+      <span class="svc-name">kavita</span>
+      <span class="svc-host">books.gnomenav.com</span>
+      <span class="svc-desc">ebook &amp; comic library</span>
+    </a>
+  </div>
+
+  <p class="svc-group-label">knowledge</p>
+  <div class="grid">
+    <a class="card" href="https://kiwix.gnomenav.com">
+      <span class="svc-name">kiwix</span>
+      <span class="svc-host">kiwix.gnomenav.com</span>
+      <span class="svc-desc">all of english wikipedia, fully offline</span>
+    </a>
+    <a class="card" href="https://wiki.gnomenav.com">
+      <span class="svc-name">wiki</span>
+      <span class="svc-host">wiki.gnomenav.com</span>
+      <span class="svc-desc">the household wiki</span>
+    </a>
+    <a class="card" href="https://blog.gnomenav.com">
+      <span class="svc-name">blog</span>
+      <span class="svc-host">blog.gnomenav.com</span>
+      <span class="svc-desc">long-form writing</span>
+    </a>
+  </div>
+
+  <p class="svc-group-label">tools</p>
+  <div class="grid">
+    <a class="card" href="https://nextcloud.gnomenav.com">
+      <span class="svc-name">nextcloud</span>
+      <span class="svc-host">nextcloud.gnomenav.com</span>
+      <span class="svc-desc">files, sync &amp; share</span>
+    </a>
+    <a class="card" href="https://llm.gnomenav.com">
+      <span class="svc-name">llm</span>
+      <span class="svc-host">llm.gnomenav.com</span>
+      <span class="svc-desc">chat with locally-hosted models</span>
+    </a>
+    <a class="card" href="https://memories.gnomenav.com">
+      <span class="svc-name">wanderer</span>
+      <span class="svc-host">memories.gnomenav.com</span>
+      <span class="svc-desc">trails &amp; trip log</span>
+    </a>
+  </div>
+</section>
+
+<section aria-labelledby="writeups">
+  <h2 id="writeups">writeups</h2>
+  <a class="writeup-item" href="/writeups/cold-boot-recovery.html">
+    <span class="writeup-date">2026-05-07</span>
+    <span class="writeup-title">What broke when I came back: 4 failure modes from a homelab cold boot</span>
+    <span class="writeup-blurb">NFS mounts that silently give up, ports pinned to stale IPs, tunnel ingress drift, and VPN-orphaned containers — diagnosed and fixed.</span>
+  </a>
+  <p><a href="/writeups/">all writeups →</a></p>
+</section>
+
+<section aria-labelledby="about">
+  <h2 id="about">about</h2>
+  <p>gnomenav is a two-machine homelab: a Ryzen compute box and a ThinkPad x220
+  NAS, running 30+ containers behind Cloudflare Zero Trust. Built on the
+  principle that infrastructure should answer to the operator, not the other
+  way around.</p>
+  <p>The whole stack is open at
+  <a href="https://github.com/ZNav/gnomenav">github.com/ZNav/gnomenav</a> —
+  compose files, ops CLI, runbooks, and the failure writeups. A fully
+  declarative NixOS rebuild is in progress.</p>
+</section>
+</main>
+
+<footer>
+  <span>© znav — MIT / public domain</span>
+  <span><a href="https://github.com/ZNav/gnomenav">github</a> · <a href="mailto:zandernavratil@gmail.com">email</a></span>
+</footer>
+
+</div>
+
+<script>
+(function () {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var el = document.getElementById("typed");
+  var text = el.textContent;
+  el.textContent = "";
+  var i = 0;
+  (function tick() {
+    if (i <= text.length) {
+      el.textContent = text.slice(0, i++);
+      setTimeout(tick, 34);
+    }
+  })();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Four distinct failure modes from a homelab cold boot — NFS mount races, stale IP bindings, tunnel ingress drift, VPN-orphaned containers — diagnosed and fixed.">
+<title>What broke when I came back: 4 failure modes from a homelab cold boot — gnomenav</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+</head>
+<body>
+<div class="wrap">
+
+<nav class="crumbs"><a href="/">gnomenav</a> / <a href="/writeups/">writeups</a> / cold-boot-recovery</nav>
+
+<main class="article">
+<h1>What broke when I came back: 4 failure modes from a homelab cold boot</h1>
+<p class="byline">2026-05-07 — first in a series on operating gnomenav.com</p>
+
+<p>I run a self-hosted stack at <code>gnomenav.com</code> — about 30 services on a single
+Ryzen box (msi), with an old ThinkPad x220 hanging off it as an NFS server.
+Jellyfin, Nextcloud, Wiki.js, mail server, an *arr stack behind a VPN, custom
+dashboards, the whole thing fronted by Cloudflare Zero Trust tunnels.</p>
+
+<p>Earlier this month the power went out for a while. When I came back and turned
+everything on, <strong><code>gnomenav.com</code> returned 502</strong>. Then I noticed <code>nextcloud</code>
+worked but couldn't see my files. Then <code>adguard.gnomenav.com</code> was dead.</p>
+
+<p>Four distinct things had broken on cold boot, each with a different root cause.
+Here's what they were, how I diagnosed them, and what I changed so they don't
+hit me the same way again.</p>
+
+<h2>1. NFS silently failing to mount</h2>
+
+<p><strong>Symptom:</strong> <code>/mnt/x220</code> was empty on msi. Jellyfin showed an empty media
+library. Kavita said "no books." The *arr containers logged "no such file or
+directory" all over.</p>
+
+<p><strong>Diagnosis:</strong> msi boots faster than x220 (different hardware generations).
+When systemd tried to mount the NFS share at boot, x220 wasn't responding yet.
+With <code>nofail</code> set in <code>fstab</code>, the mount silently gave up — and never retried.</p>
+
+<pre><code>$ ssh msi df -h /mnt/x220
+df: /mnt/x220: No such file or directory
+$ grep x220 /etc/fstab
+10.0.0.138:/home/x220-edge/nas /mnt/x220 nfs defaults,_netdev,nofail,vers=3 0 0</code></pre>
+
+<p><strong>Fix:</strong> swap <code>nofail</code> for <code>x-systemd.automount</code>. The mount becomes a deferred
+unit — systemd doesn't try to mount until something actually accesses
+<code>/mnt/x220</code>, by which point x220 is up. The mount becomes self-healing.</p>
+
+<pre><code>10.0.0.138:/home/x220-edge/nas /mnt/x220 nfs \
+  defaults,_netdev,nofail,vers=3,noauto,x-systemd.automount,x-systemd.idle-timeout=600 \
+  0 0</code></pre>
+
+<p><code>systemctl daemon-reload</code>, then test by <code>ls /mnt/x220</code>. The mount unit fires
+on access. Reboots no longer race x220.</p>
+
+<h2>2. AdGuard's port 53 bound to a stale IP</h2>
+
+<p><strong>Symptom:</strong> <code>adguard.gnomenav.com</code> returned 502. <code>docker ps</code> showed
+<code>adguardhome</code> in a restart loop.</p>
+
+<p><strong>Diagnosis:</strong> The compose block had AdGuard binding port 53 to a specific
+host IP:</p>
+
+<pre><code>adguardhome:
+  ports:
+    - "10.0.0.176:53:53/tcp"
+    - "10.0.0.176:53:53/udp"</code></pre>
+
+<p>After the reboot, msi came up at <code>10.0.0.172</code> (wired) / <code>10.0.0.175</code> (wifi)
+instead of the historical <code>10.0.0.176</code> it used to hold. DHCP, no reservation
+on the router. The bind failed:</p>
+
+<pre><code>failed to bind host port 10.0.0.176:53/tcp: cannot assign requested address</code></pre>
+
+<p>That bind failure prevented the container from attaching to its network at
+all — which is why the web UI was also unreachable, not just DNS. One bad
+bind cascaded into total service death.</p>
+
+<p><strong>Fix (immediate):</strong> comment out the host bindings. AdGuard's web UI on
+<code>:3000</code> still reaches it through the Cloudflare tunnel via container DNS.
+Port-53 LAN-DNS-server mode goes back online once I either set a DHCP
+reservation on the router or change the binding to <code>0.0.0.0:53</code> (and resolve
+the conflict with <code>systemd-resolved</code>, which holds <code>127.0.0.53:53</code> on the
+host's stub resolver).</p>
+
+<pre><code>ports:
+  # - "0.0.0.0:53:53/tcp" # disabled 2026-05-05: re-enable on stable IP
+  # - "0.0.0.0:53:53/udp"</code></pre>
+
+<p><strong>Lesson:</strong> <em>don't pin host IPs in compose unless you control the IP.</em> Every
+service that binds a specific host IP becomes brittle on DHCP drift.</p>
+
+<h2>3. Cloudflare tunnel ingress drift</h2>
+
+<p><strong>Symptom:</strong> <code>crucix.gnomenav.com</code> and <code>worldmonitor.gnomenav.com</code> returned
+502 even though their containers were running fine.</p>
+
+<p><strong>Diagnosis:</strong> Same root cause as AdGuard, different layer. The Cloudflare
+Zero Trust dashboard had ingress routes hardcoded as
+<code>tcp://10.0.0.176:3117</code> / <code>tcp://10.0.0.176:3005</code> — pointing at an IP msi
+no longer holds.</p>
+
+<p>The Cloudflare tunnel daemon is running inside docker, so it sees the host
+through the docker bridge. When it tried to reach <code>10.0.0.176:3117</code>, that
+address didn't exist on the LAN anymore.</p>
+
+<p><strong>Fix:</strong> rewrite the tunnel ingress to use docker DNS, not host IP:</p>
+
+<table>
+<thead><tr><th>Service</th><th>Before</th><th>After</th></tr></thead>
+<tbody>
+<tr><td><code>crucix.gnomenav.com</code></td><td><code>tcp://10.0.0.176:3117</code></td><td><code>http://crucix:3117</code></td></tr>
+<tr><td><code>worldmonitor.gnomenav.com</code></td><td><code>tcp://10.0.0.176:3005</code></td><td><code>http://worldmonitor:8080</code></td></tr>
+</tbody>
+</table>
+
+<p>Container DNS resolves inside the cloudflared container's network attachment.
+It doesn't care what address the host has on the LAN. <strong>Whoever set those
+ingresses originally pinned the IP because it was easy at the time</strong> — and
+created a failure mode that triggers every time DHCP gives msi a different
+lease.</p>
+
+<p><strong>Lesson:</strong> <em>prefer container DNS over host IP for tunnel ingress.</em> The
+pattern <code>http://&lt;service-name&gt;:&lt;container-internal-port&gt;</code> is the same shape
+whether you have one host or ten.</p>
+
+<h2>4. VPN-attached services orphaned by a parent recreate</h2>
+
+<p><strong>Symptom (potential, didn't actually fire this time but I noticed the
+shape of it while debugging):</strong> the *arr stack runs with
+<code>network_mode: "service:vpn"</code>, sharing the WireGuard container's network
+namespace. If <code>vpn</code> ever gets recreated on its own, every dependent service
+loses its network and can't be reached even though the container is "up."</p>
+
+<p><strong>Diagnosis:</strong> docker doesn't know about the soft dependency. <code>docker compose
+up -d vpn</code> recreates <code>vpn</code> and silently strands <code>sonarr</code>, <code>radarr</code>,
+<code>prowlarr</code>, <code>lidarr</code>, <code>readarr</code>, <code>qbittorrent</code>. Their containers keep
+running, but their network namespace is gone.</p>
+
+<p><strong>Fix:</strong> if you ever bounce <code>vpn</code>, you have to bounce the dependent set too:</p>
+
+<pre><code>docker compose up -d sonarr radarr prowlarr lidarr readarr qbittorrent</code></pre>
+
+<p>I now have this in a recovery checklist that lives next to the compose file.</p>
+
+<h2>What changed in my operational habit</h2>
+
+<p>After the fourth one I stopped fixing things ad-hoc and put the fixes
+into source control:</p>
+
+<ol>
+<li><strong>The recovery checklist became a real doc</strong> — every failure mode I diagnosed got written up the same evening, with root cause, symptom, and the fix. It lives at <code>docs/cold-boot-recovery.md</code> in the gnomenav repo.</li>
+<li><strong>A small CLI dispatcher (<code>nav</code>)</strong> emerged for the diagnostic loop I kept running — <code>nav status</code>, <code>nav health</code>, <code>nav logs &lt;svc&gt;</code> — so the next outage is a 30-second triage instead of "remember the docker compose incantation."</li>
+<li><strong>The compose file got templated</strong> — every value that was a literal got pulled out into <code>.env</code>, and the <code>.env.example</code> lives in source. Reduces the ways future-me can be surprised.</li>
+<li><strong>The whole thing went on GitHub</strong> — public repo at <a href="https://github.com/ZNav/gnomenav"><code>ZNav/gnomenav</code></a>. The point isn't the code; it's that "what does this do" is answerable from the repo without remembering anything.</li>
+</ol>
+
+<h2>What I'd do differently next time</h2>
+
+<ul>
+<li><strong>Set the DHCP reservation on day one.</strong> Almost every problem above traces back to "the IP changed and something assumed it wouldn't." A reservation is two minutes on the router. I haven't been able to set mine yet (LAN is shared, can't touch router config), but the next homelab gets one before the first compose file is written.</li>
+<li><strong>Audit IP literals before publishing.</strong> Once I templated the obvious secrets, I went and grepped for IPs across all configs — found four more in CF dashboard ingress alone. The audit takes 10 minutes; the cost of not doing it is one outage per environment change.</li>
+<li><strong>Treat compose drift as a leak.</strong> When live containers don't match <code>docker-compose.yml</code>, you've already lost source-of-truth. I'd run a "what's running but not in source?" check as a pre-deploy gate.</li>
+</ul>
+
+<h2>What's next</h2>
+
+<p>Up next in this series:</p>
+<ul>
+<li><em>Designing <code>nav</code>: one CLI for two-host homelab ops</em></li>
+<li><em>Going public with my homelab repo: secrets I almost shipped (and one GitGuardian caught me on)</em></li>
+<li><em>Cloudflare Zero Trust SSH from anywhere: the 30-minute setup</em></li>
+</ul>
+
+<p>The whole gnomenav stack is at <a href="https://github.com/ZNav/gnomenav"><code>github.com/ZNav/gnomenav</code></a>.</p>
+
+<hr>
+<p><em>Comments / questions / better ways to do any of this:
+<a href="mailto:zandernavratil@gmail.com">zandernavratil@gmail.com</a></em></p>
+</main>
+
+<footer>
+  <span>© znav — MIT / public domain</span>
+  <span><a href="https://github.com/ZNav/gnomenav">github</a> · <a href="mailto:zandernavratil@gmail.com">email</a></span>
+</footer>
+
+</div>
+</body>
+</html>

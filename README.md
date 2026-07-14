@@ -57,6 +57,7 @@ See [`docs/topology.md`](docs/topology.md) for the full service map.
 compose/docker-compose.yml      # full service stack — secrets via ${VARS}
 .env.example                    # template for .env (real .env stays on msi)
 bin/nav                         # ops dispatcher; lives at /usr/local/bin/nav
+gnomenav-site/                  # static site served at gnomenav.com (nginx)
 wikijs/wargames-theme.css       # phosphor-green CRT theme for Wiki.js admin UI
 docs/
   topology.md                   # services, ports, hosts, Cloudflare routes
