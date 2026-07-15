@@ -9,6 +9,10 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 </head>
 <body>
+<div class="topbar" aria-hidden="true">
+  <span class="tb-left"><span class="tb-index">[0]</span> gnomenav <span class="muted">▸ ~/home</span></span>
+  <span class="tb-right">msi ⇄ x220 <span class="ok">●</span></span>
+</div>
 <div class="wrap">
 
 <header class="hero">
@@ -134,6 +138,12 @@ next       full declarative rebuild on nixos           <span class="muted">[soon
 
 </div>
 
+<div class="statusline">
+  <span class="sl-mode">-- NORMAL --</span>
+  <span class="sl-keys" aria-hidden="true">j/k:scroll &nbsp;g:github &nbsp;w:writeups &nbsp;b:blog &nbsp;t:top</span>
+  <span class="sl-right" aria-hidden="true">utf-8 · unix · <span id="sl-pos">0%</span></span>
+</div>
+
 <script>
 (function () {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -147,6 +157,32 @@ next       full declarative rebuild on nixos           <span class="muted">[soon
       setTimeout(tick, 34);
     }
   })();
+})();
+
+/* TUI keybindings — the statusline hints are real */
+(function () {
+  var keys = {
+    j: function () { scrollBy({ top: 120, behavior: "smooth" }); },
+    k: function () { scrollBy({ top: -120, behavior: "smooth" }); },
+    g: function () { location.href = "https://github.com/ZNav/gnomenav"; },
+    w: function () { location.href = "/writeups/"; },
+    b: function () { location.href = "https://blog.gnomenav.com"; },
+    t: function () { scrollTo({ top: 0, behavior: "smooth" }); }
+  };
+  addEventListener("keydown", function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (/^(input|textarea|select)$/i.test(e.target.tagName)) return;
+    if (keys[e.key]) { keys[e.key](); e.preventDefault(); }
+  });
+  /* scroll percentage in the statusline, like vim's ruler */
+  var pos = document.getElementById("sl-pos");
+  function ruler() {
+    var max = document.documentElement.scrollHeight - innerHeight;
+    var pct = max > 0 ? Math.round(scrollY / max * 100) : 100;
+    pos.textContent = pct <= 0 ? "TOP" : pct >= 100 ? "BOT" : pct + "%";
+  }
+  addEventListener("scroll", ruler, { passive: true });
+  ruler();
 })();
 </script>
 </body>
