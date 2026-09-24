@@ -30,6 +30,7 @@
   # TTY-first main interface: boot lands in the zellij/yazi deck on tty1;
   # Hyprland exists only behind the `gui` command. See modules/tui-first.nix.
   gnomenav.tuiFirst.enable = true;
+#  virtualisation.docker.enable = true;
 
   # Telegram ↔ Claude gateway; secrets are real in secrets/secrets.yaml
   # (2026-07-14). allowFrom in the openclaw.json config volume, per
@@ -41,6 +42,6 @@
   # the SanDisk, paths updated /home/znav/nas -> /data); library db at
   # /data/beets_library.db.
   environment.systemPackages = [ pkgs.beets ];
-  services.xserver.displayManager.autologin.enable = true;
-  services.xserver.displayManager.autologin.user = "z";
+  services.xserver.displayManager.autoLogin.enable = true;
+  services.xserver.displayManager.autoLogin.user = "z";
 }
