@@ -41,4 +41,6 @@
   # the SanDisk, paths updated /home/znav/nas -> /data); library db at
   # /data/beets_library.db.
   environment.systemPackages = [ pkgs.beets ];
+  services.xserver.displayManager.autologin.enable = true;
+  services.xserver.displayManager.autologin.user = "z";
 }
