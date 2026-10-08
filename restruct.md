@@ -28,3 +28,9 @@ software {
   tailscale and or finish cloudflare ssh tunnel for turning on when off-site
   new homepage
 }
+
+hardware {
+  msi 15 delta Ryzen7 with GPU and 16gb ram 1tb ssd
+  thinkpad yoga intel i5 probably 2gb ram 500gb hard drive
+  x220 1tb hard drive 8gb ram (i think)
+}
