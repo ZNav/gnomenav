@@ -1,5 +1,18 @@
 ```RESET of Gnomenav.com```
-# needed outcomes
+                __
+             .-'  |
+            /   <\|
+           /     \'
+           |_.- o-o
+           / C  -._)\
+          /',        |
+         |   `-,_,__,'
+         (,,)====[_]=|
+           '.   ____/
+            | -|-|_
+            |____)_)
+
+needed outcomes
 under 5 min downtime on reset and reboot
 multiple flakes for each item rather than docker all virtualized {
   jellyfin
