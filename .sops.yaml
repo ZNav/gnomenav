@@ -1,0 +1,16 @@
+# Public keys only — safe to commit.
+# admin = Zander's Mac (~/.config/sops/age/keys.txt). Add each host's age key
+# (derived from its ssh host key via ssh-to-age, or /var/lib/sops-nix/key.txt)
+# as a recipient before install, then `sops updatekeys secrets/secrets.yaml`.
+keys:
+  - &admin age1kydkpns03542pq3tnjd32m2n920fa72ngzcknjdpsjl4ezzdppgsyc25y7
+  # msi host key, pre-generated 2026-07-18 on the Mac so secrets decrypt on
+  # first boot. PRIVATE half: Mac ~/.config/sops/age/msi-host.txt — the
+  # install runbook copies it to msi:/var/lib/sops-nix/key.txt (mode 0600).
+  - &msi age165t8xt8egx67jctpdrt2nxw532an2ruq60qjw8twrjgmxh0x7c6s9tg6jf
+creation_rules:
+  - path_regex: secrets/secrets\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *msi
