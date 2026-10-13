@@ -1,16 +1,7 @@
 ```RESET of Gnomenav.com```
-#               __
-#            .-'  |
-#            /   <\|
-#           /     \'
-#           |_.- o-o
-#           / C  -._)\
-#          /',        |
-#         |   `-,_,__,'
-#         (,,)====[_]=|
-#           '.   ____/
-#            | -|-|_
-#            |____)_)
+.  /\
+. (oo)
+.{.vv.}
 
 needed outcomes
 under 5 min downtime on reset and reboot
