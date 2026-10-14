@@ -86,4 +86,7 @@ hardware {
     x220 (usbc, intel i7, 1tb hard drive)
     x220 (!=battery, intel i7
     thinkpad yoga(500gb hard drive)}
+
+plans:
+sfc config.nix + .env for everything, manual manual manual to start, min services.
     
